@@ -1,0 +1,31 @@
+# 🔒 절대 커밋 금지 — 민감 정보
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+*.key
+*.pem
+
+# 🗂️ 런타임 산출물 — 로컬용만, 클라우드에선 깨끗하게 시작
+out/
+history/
+streamlit_test.log
+
+# 🐍 Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 🪟 OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp

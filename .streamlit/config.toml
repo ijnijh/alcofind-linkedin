@@ -1,0 +1,14 @@
+# Streamlit 테마 — ALCOFIND 브랜드 컬러
+[theme]
+primaryColor = "#1B4D2B"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4E8D0"
+textColor = "#0F1A11"
+font = "sans serif"
+
+[server]
+headless = true
+runOnSave = true
+
+[browser]
+gatherUsageStats = false
