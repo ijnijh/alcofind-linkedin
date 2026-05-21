@@ -147,6 +147,7 @@ def compose_post(sections: dict[str, str], primary_lang: str) -> dict[str, str]:
         "image_hook_ref": sections.get("IMAGE_HOOK · KO 참고", ""),
         "intent_note": sections.get("INTENT_NOTE", ""),
         "facts_to_verify": sections.get("FACTS_TO_VERIFY", ""),
+        "image_keywords": sections.get("IMAGE_KEYWORDS", ""),
     }
 
 

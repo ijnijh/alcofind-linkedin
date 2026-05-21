@@ -2,3 +2,4 @@ streamlit>=1.39
 Pillow>=10.4
 anthropic>=0.42
 python-dotenv>=1.0
+requests>=2.32

@@ -35,11 +35,14 @@ from config import (
 from chat_refine import call_refine
 from image_renderer import (
     render_hook_card,
+    render_photo_hook_card,
+    render_photo_quote_card,
     render_question_card,
     render_quote_card,
     render_split_card,
     render_stat_card,
 )
+from unsplash_client import get_photo_for_query, has_unsplash_key
 from llm_client import (
     call_claude,
     compose_post,
@@ -444,9 +447,12 @@ def render_step2(track: str, series_dict: dict, key_prefix: str):
     st.markdown("##### 🖼️ 브랜드 이미지")
     icol1, icol2, icol3 = st.columns([1, 1, 1])
     with icol1:
+        photo_label_suffix = "" if has_unsplash_key() else "  (UNSPLASH_ACCESS_KEY 필요)"
         img_template = st.selectbox(
             "템플릿",
             [
+                f"📷 Photo Hook — 실제 사진 + 후킹{photo_label_suffix}",
+                f"📷 Photo Quote — 사진 + 인용 박스{photo_label_suffix}",
                 "Hook 카드 — 후킹 한 줄 + 강조 컬러",
                 "Quote 카드 — 매거진 풍 인용",
                 "Stat 카드 — 큰 숫자 + 도넛",
@@ -472,8 +478,27 @@ def render_step2(track: str, series_dict: dict, key_prefix: str):
     # 입력 변수 초기화
     img_hook_override = quote_attr = stat_text = stat_caption = stat_source = ""
     split_label = split_statement = question_q = question_a = ""
+    photo_keywords = ""
 
-    if img_template.startswith("Hook"):
+    if img_template.startswith("📷"):
+        photo_keywords = st.text_input(
+            "Unsplash 키워드 (영문 2~3 단어, 비우면 LLM의 IMAGE_KEYWORDS 자동 사용)",
+            key=f"{key_prefix}_s2_photokw",
+            placeholder="예: construction worker safety helmet",
+        )
+        img_hook_override = st.text_area(
+            "이미지 오버레이 텍스트 (비우면 LLM의 IMAGE_HOOK 자동 사용)",
+            key=f"{key_prefix}_s2_imghook",
+            height=80,
+            help='따옴표 안 단어·숫자·대문자 약어가 자동 강조됩니다.',
+        )
+        if img_template.startswith("📷 Photo Quote"):
+            quote_attr = st.text_input(
+                "화자 (Quote 카드)",
+                value="현장 안전관리자" if track == "personal" else "On-site safety manager",
+                key=f"{key_prefix}_s2_qattr",
+            )
+    elif img_template.startswith("Hook"):
         img_hook_override = st.text_input(
             "이미지 후킹 직접 입력 (비우면 LLM IMAGE_HOOK 자동 사용)",
             key=f"{key_prefix}_s2_imghook",
@@ -570,6 +595,7 @@ def render_step2(track: str, series_dict: dict, key_prefix: str):
             split_statement=split_statement,
             question_q=question_q,
             question_a=question_a,
+            photo_keywords=photo_keywords,
         )
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -620,6 +646,7 @@ def render_step2(track: str, series_dict: dict, key_prefix: str):
                 "split_statement": split_statement,
                 "question_q": question_q,
                 "question_a": question_a,
+                "photo_keywords": photo_keywords,
             },
             "selected": selected,
             "track": track,
@@ -653,10 +680,55 @@ def _render_chosen_image(
     split_statement: str = "",
     question_q: str = "",
     question_a: str = "",
+    photo_keywords: str = "",
 ) -> bytes:
     """선택된 템플릿으로 이미지 바이트 반환."""
     auto_hook = composed.get("image_hook") if composed else ""
+    auto_keywords = composed.get("image_keywords") if composed else ""
     topic = selected.get("topic", "")
+
+    # ===== Photo (Unsplash) 템플릿 =====
+    if img_template.startswith("📷"):
+        kw = (photo_keywords or auto_keywords or topic).strip()
+        # Unsplash 호출 — 키 없으면 fallback으로 Bold Hook
+        if not has_unsplash_key():
+            st.warning("UNSPLASH_ACCESS_KEY가 없어 Photo 템플릿 대신 Bold Hook으로 렌더합니다.")
+        else:
+            try:
+                result = get_photo_for_query(kw, orientation="squarish", index=0)
+                if result is None:
+                    st.warning(f"키워드 '{kw}'로 사진 못 찾음 → Bold Hook으로 렌더합니다.")
+                else:
+                    photo, meta = result
+                    user = meta.get("user", {})
+                    credit = f"Photo by {user.get('name', '?')} on Unsplash"
+                    hook = (img_hook_override or auto_hook or topic)[:100]
+                    if img_template.startswith("📷 Photo Quote"):
+                        return render_photo_quote_card(
+                            hook,
+                            photo,
+                            attribution=quote_attr or "현장",
+                            photo_credit=credit,
+                            size=img_size,
+                        )
+                    return render_photo_hook_card(
+                        hook,
+                        photo,
+                        series_tag=img_series_tag or series_label,
+                        author=author_line,
+                        photo_credit=credit,
+                        size=img_size,
+                    )
+            except Exception as e:
+                st.warning(f"Unsplash 호출 실패 ({e}) → Bold Hook으로 fallback")
+        # fallback: Bold Hook
+        hook = (img_hook_override or auto_hook or topic)[:100]
+        return render_hook_card(
+            hook,
+            series_tag=img_series_tag or series_label,
+            author=author_line,
+            size=img_size,
+        )
 
     if img_template.startswith("Hook"):
         hook = (img_hook_override or auto_hook or topic)[:100]
@@ -842,6 +914,7 @@ def _render_refine_chat(result: dict):
         split_statement=img_args["split_statement"],
         question_q=img_args["question_q"],
         question_a=img_args["question_a"],
+        photo_keywords=img_args.get("photo_keywords", ""),
     )
 
     # 새 이미지 파일 저장 (덮어쓰기 X — 새 timestamp)

@@ -13,7 +13,7 @@ import random
 import re
 from io import BytesIO
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from config import BRAND, FONT_BOLD, FONT_REGULAR
 
@@ -522,4 +522,169 @@ def render_question_card(
 
     buf = BytesIO()
     img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+# ===================== Template 6: Photo Hook (Unsplash 사진 + 오버레이) =====================
+def render_photo_hook_card(
+    hook_text: str,
+    photo: Image.Image,
+    series_tag: str = "Field Note",
+    brand_line: str = "DA Tech · ALCOFIND",
+    author: str = "",
+    photo_credit: str = "",
+    size=(1080, 1080),
+) -> bytes:
+    """실제 사진(Unsplash) + 그라데이션 + 후킹 텍스트 오버레이.
+
+    photo: PIL Image (Unsplash에서 다운받은 것)
+    photo_credit: 크레딧 줄 (예: "Photo by Hanson Lu on Unsplash")
+    """
+    W, H = size
+    # 1) 사진을 W×H로 cover crop (비율 유지, 잘림)
+    pw, ph = photo.size
+    scale = max(W / pw, H / ph)
+    new_size = (int(pw * scale), int(ph * scale))
+    photo = photo.resize(new_size, Image.LANCZOS)
+    px = (new_size[0] - W) // 2
+    py = (new_size[1] - H) // 2
+    img = photo.crop((px, py, px + W, py + H))
+
+    d = ImageDraw.Draw(img, "RGBA")
+
+    # 2) 어두운 그라데이션 — 상단 가벼움, 하단 강하게 (가독성)
+    grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(grad)
+    # 상단 60%는 살짝, 하단 40%는 진하게
+    for y in range(H):
+        if y < H * 0.4:
+            alpha = int(60 * (1 - y / (H * 0.4)))  # 상단 살짝
+        elif y < H * 0.6:
+            alpha = 40
+        else:
+            t = (y - H * 0.6) / (H * 0.4)
+            alpha = int(40 + 200 * t)  # 하단 진하게
+        gd.line([(0, y), (W, y)], fill=(0, 0, 0, alpha))
+    img = Image.alpha_composite(img.convert("RGBA"), grad)
+    d = ImageDraw.Draw(img, "RGBA")
+
+    # 3) 상단 좌측에 시리즈 태그 (배경 박스)
+    tag_font = _font_bold(28)
+    tag_text = series_tag.upper()
+    tw = int(d.textlength(tag_text, font=tag_font))
+    th = 36
+    d.rectangle([(60, 60), (60 + tw + 28, 60 + th + 16)], fill=P_PRIMARY)
+    # 우측에 옐로우 액센트 막대
+    d.rectangle([(60 + tw + 28, 60), (60 + tw + 38, 60 + th + 16)], fill=P_HIGHLIGHT)
+    d.text((74, 68), tag_text, fill=P_HIGHLIGHT, font=tag_font)
+
+    # 4) Hook — 화면 하단 30~70% 영역에 큰 텍스트 + 강조
+    margin_x = 80
+    avail_w = W - margin_x * 2 - 20
+    avail_h = int(H * 0.42)
+    font, lines, fsize, total_h = _fit_font(
+        hook_text, d, avail_w, avail_h,
+        max_size=84, bold=True, min_size=42, line_pad=14,
+    )
+    y = int(H * 0.58) - 20
+    for ln in lines:
+        _draw_text_with_emphasis(d, margin_x, y, ln, font, P_WHITE, P_HIGHLIGHT)
+        y += fsize + 14
+
+    # 5) 하단 브랜드 + 작성자
+    foot_b = _font_bold(26)
+    foot_r = _font_regular(22)
+    if author.strip():
+        d.text((80, H - 130), brand_line, fill=P_ACCENT, font=foot_b)
+        d.text((80, H - 95), author, fill=P_WHITE, font=foot_r)
+    else:
+        d.text((80, H - 110), brand_line, fill=P_ACCENT, font=foot_b)
+    _underline(d, 80, H - 55, 80, P_HIGHLIGHT, thickness=6)
+
+    # 6) Unsplash 크레딧 (작게, 우하단)
+    if photo_credit:
+        cr_font = _font_regular(14)
+        cw = int(d.textlength(photo_credit, font=cr_font))
+        d.text((W - cw - 20, H - 24), photo_credit, fill=(255, 255, 255, 200), font=cr_font)
+
+    buf = BytesIO()
+    img.convert("RGB").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+# ===================== Template 7: Photo Quote =====================
+def render_photo_quote_card(
+    quote: str,
+    photo: Image.Image,
+    attribution: str = "현장 안전관리자",
+    brand_line: str = "DA Tech · ALCOFIND",
+    photo_credit: str = "",
+    size=(1080, 1080),
+) -> bytes:
+    """사진 위에 흰색 인용 박스 — 매거진 풍."""
+    W, H = size
+    pw, ph = photo.size
+    scale = max(W / pw, H / ph)
+    new_size = (int(pw * scale), int(ph * scale))
+    photo = photo.resize(new_size, Image.LANCZOS)
+    px = (new_size[0] - W) // 2
+    py = (new_size[1] - H) // 2
+    img = photo.crop((px, py, px + W, py + H)).convert("RGBA")
+
+    # 살짝 어둡게
+    dark = Image.new("RGBA", (W, H), (0, 0, 0, 70))
+    img = Image.alpha_composite(img, dark)
+    d = ImageDraw.Draw(img, "RGBA")
+
+    # 흰 인용 박스 (가운데, 폭 70%)
+    box_w = int(W * 0.78)
+    box_x = (W - box_w) // 2
+    # 임시 박스 높이 측정용 폰트
+    qf = _font_bold(54)
+    lines = _wrap(quote, qf, d, box_w - 80)
+    # 너무 길면 폰트 줄임
+    while len(lines) > 6 and qf.size > 32:
+        qf = _font_bold(qf.size - 4)
+        lines = _wrap(quote, qf, d, box_w - 80)
+    box_h = 140 + len(lines) * (qf.size + 14) + 100
+    box_y = (H - box_h) // 2
+
+    # 박스 + 그림자
+    shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shadow)
+    sd.rectangle([(box_x + 10, box_y + 14), (box_x + box_w + 10, box_y + box_h + 14)],
+                 fill=(0, 0, 0, 80))
+    img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(8)))
+    d = ImageDraw.Draw(img, "RGBA")
+    d.rectangle([(box_x, box_y), (box_x + box_w, box_y + box_h)], fill=P_WHITE)
+    # 좌측 컬러 라인
+    d.rectangle([(box_x, box_y), (box_x + 10, box_y + box_h)], fill=P_PRIMARY)
+
+    # 큰 따옴표 그래픽
+    q_big = _font_bold(120)
+    d.text((box_x + 40, box_y + 10), '"', fill=P_PRIMARY, font=q_big)
+
+    # 인용문
+    y = box_y + 130
+    for ln in lines:
+        _draw_text_with_emphasis(d, box_x + 50, y, ln, qf, P_INK, P_ALERT)
+        y += qf.size + 14
+
+    # 화자
+    attr_font = _font_bold(24)
+    d.text((box_x + 50, box_y + box_h - 70), "— " + attribution, fill=P_PRIMARY, font=attr_font)
+
+    # 하단 브랜드 (사진 위)
+    brand_f = _font_bold(22)
+    bw = int(d.textlength(brand_line, font=brand_f))
+    d.text(((W - bw) // 2, H - 50), brand_line, fill=P_WHITE, font=brand_f)
+
+    # 크레딧
+    if photo_credit:
+        cr_font = _font_regular(13)
+        cw = int(d.textlength(photo_credit, font=cr_font))
+        d.text((W - cw - 18, H - 22), photo_credit, fill=(255, 255, 255, 200), font=cr_font)
+
+    buf = BytesIO()
+    img.convert("RGB").save(buf, format="PNG")
     return buf.getvalue()
