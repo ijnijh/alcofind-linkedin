@@ -18,6 +18,27 @@ from PIL import Image, ImageDraw, ImageFont
 from config import BRAND, FONT_BOLD, FONT_REGULAR
 
 
+def _font(size: int, bold: bool = True):
+    """폰트 경로 안전 로드. 경로 비었거나 못 열면 PIL 기본 폰트 fallback (한글 깨질 수 있음)."""
+    path = FONT_BOLD if bold else FONT_REGULAR
+    if path:
+        try:
+            return ImageFont.truetype(path, size)
+        except (OSError, IOError):
+            pass
+    return ImageFont.load_default()
+
+
+def _font_bold(size: int):
+    """편의 함수 — bold 폰트 안전 로드."""
+    return _font(size, bold=True)
+
+
+def _font_regular(size: int):
+    """편의 함수 — regular 폰트 안전 로드."""
+    return _font(size, bold=False)
+
+
 # ===================== Color helpers =====================
 def _hex(c: str):
     return tuple(int(c.lstrip("#")[i : i + 2], 16) for i in (0, 2, 4))
@@ -68,16 +89,15 @@ def _wrap(text: str, font, draw, max_width: int):
 
 
 def _fit_font(text, draw, max_w, max_h, max_size, bold=True, min_size=22, line_pad=14):
-    path = FONT_BOLD if bold else FONT_REGULAR
     size = max_size
     while size >= min_size:
-        f = ImageFont.truetype(path, size)
+        f = _font(size, bold=bold)
         lines = _wrap(text, f, draw, max_w)
         total = len(lines) * (size + line_pad)
         if total <= max_h:
             return f, lines, size, total
         size -= 4
-    f = ImageFont.truetype(path, min_size)
+    f = _font(min_size, bold=bold)
     lines = _wrap(text, f, draw, max_w)
     total = len(lines) * (min_size + line_pad)
     return f, lines, min_size, total
@@ -205,7 +225,7 @@ def render_hook_card(
     d.rectangle([(W - 60, 0), (W, 60)], fill=P_ACCENT)
 
     # 시리즈 태그 (상단) + underline
-    tag_font = ImageFont.truetype(FONT_BOLD, 30)
+    tag_font = _font_bold(30)
     d.text((80, 100), series_tag.upper(), fill=P_HIGHLIGHT, font=tag_font)
     tag_w = d.textlength(series_tag.upper(), font=tag_font)
     _underline(d, 80, 140, int(tag_w), P_HIGHLIGHT, thickness=4)
@@ -224,8 +244,8 @@ def render_hook_card(
         y += fsize + 16
 
     # 하단 브랜드 라인
-    foot_b = ImageFont.truetype(FONT_BOLD, 28)
-    foot_r = ImageFont.truetype(FONT_REGULAR, 24)
+    foot_b = _font_bold(28)
+    foot_r = _font_regular(24)
     if author.strip():
         d.text((80, H - 130), brand_line, fill=P_ACCENT, font=foot_b)
         d.text((80, H - 90), author, fill=P_WHITE, font=foot_r)
@@ -293,12 +313,12 @@ def render_quote_card(
         y += fsize + 16
 
     # 화자 — 좌측에 짧은 다크그린 라인 + 텍스트
-    attr_font = ImageFont.truetype(FONT_BOLD, 30)
+    attr_font = _font_bold(30)
     _underline(d, margin_x, H - 140, 56, P_PRIMARY, thickness=4)
     d.text((margin_x + 72, H - 155), attribution, fill=P_PRIMARY, font=attr_font)
 
     # 브랜드 라인 — 우측 하단
-    brand_f = ImageFont.truetype(FONT_BOLD, 22)
+    brand_f = _font_bold(22)
     bw = d.textlength(brand_line, font=brand_f)
     d.text((W - bw - 80, H - 70), brand_line, fill=P_MUTED, font=brand_f)
 
@@ -337,7 +357,7 @@ def render_stat_card(
         stat_size = 160
     if len(stat) > 12:
         stat_size = 120
-    sf = ImageFont.truetype(FONT_BOLD, stat_size)
+    sf = _font_bold(stat_size)
     bbox = d.textbbox((0, 0), stat, font=sf)
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
@@ -370,13 +390,13 @@ def render_stat_card(
 
     # 출처
     if source:
-        srcf = ImageFont.truetype(FONT_REGULAR, 22)
+        srcf = _font_regular(22)
         txt = f"source · {source}" if all(ord(c) < 128 for c in source) else f"출처 · {source}"
         sw = d.textlength(txt, font=srcf)
         d.text(((W - int(sw)) // 2, H - 90), txt, fill=P_MUTED, font=srcf)
 
     # 브랜드
-    bf = ImageFont.truetype(FONT_BOLD, 22)
+    bf = _font_bold(22)
     bw = d.textlength(brand_line, font=bf)
     d.text(((W - int(bw)) // 2, H - 55), brand_line, fill=P_PRIMARY, font=bf)
 
@@ -431,7 +451,7 @@ def render_split_card(
 
     # 우측 하단 브랜드 + 액센트
     _underline(d, RIGHT_X, H - 100, 60, P_PRIMARY, thickness=6)
-    bf = ImageFont.truetype(FONT_BOLD, 24)
+    bf = _font_bold(24)
     d.text((RIGHT_X, H - 80), brand_line, fill=P_PRIMARY, font=bf)
 
     buf = BytesIO()
@@ -452,7 +472,7 @@ def render_question_card(
     d = ImageDraw.Draw(img)
 
     # 배경 — 우측에 거대한 ? 그래픽
-    qmf = ImageFont.truetype(FONT_BOLD, 720)
+    qmf = _font_bold(720)
     qm_text = "?"
     qm_bbox = d.textbbox((0, 0), qm_text, font=qmf)
     qm_w = qm_bbox[2] - qm_bbox[0]
@@ -466,7 +486,7 @@ def render_question_card(
     )
 
     # 좌상단 라벨
-    tag_font = ImageFont.truetype(FONT_BOLD, 26)
+    tag_font = _font_bold(26)
     d.text((70, 80), "ALCOFIND · INDUSTRY PULSE", fill=P_PRIMARY, font=tag_font)
     _underline(d, 70, 116, 100, P_PRIMARY, thickness=4)
 
@@ -484,7 +504,7 @@ def render_question_card(
     if micro_answer:
         ans_box_y = max(y + 40, int(H * 0.66))
         af_size = 30
-        af = ImageFont.truetype(FONT_REGULAR, af_size)
+        af = _font_regular(af_size)
         a_lines = _wrap(micro_answer, af, d, int(W * 0.58))
         box_h = len(a_lines) * (af_size + 8) + 36
         d.rectangle([(60, ans_box_y), (60 + int(W * 0.6), ans_box_y + box_h)], fill=P_WHITE)
@@ -496,7 +516,7 @@ def render_question_card(
             ay += af_size + 8
 
     # 브랜드 라인 하단
-    bf = ImageFont.truetype(FONT_BOLD, 26)
+    bf = _font_bold(26)
     d.text((70, H - 90), brand_line, fill=P_PRIMARY, font=bf)
     _underline(d, 70, H - 52, 60, P_HIGHLIGHT, thickness=6)
 

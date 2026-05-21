@@ -35,8 +35,41 @@ BRAND = {
     "paper": "#FAF7F0",         # 종이톤 (에디토리얼 배경용)
 }
 
-FONT_REGULAR = "C:/Windows/Fonts/malgun.ttf"
-FONT_BOLD = "C:/Windows/Fonts/malgunbd.ttf"
+# 폰트 경로 — OS별 자동 탐색 (Windows: 맑은 고딕 / Linux/Cloud: 나눔고딕)
+import platform as _platform
+
+
+def _find_korean_font(bold: bool = False) -> str:
+    """OS별로 한글 지원 TTF 경로 자동 탐색.
+
+    Windows: 맑은 고딕 → 클라우드(Linux Ubuntu): 나눔고딕 (packages.txt로 설치).
+    못 찾으면 빈 문자열 반환 → image_renderer가 PIL 기본 폰트로 fallback.
+    """
+    is_windows = _platform.system() == "Windows"
+    if is_windows:
+        path = Path("C:/Windows/Fonts") / ("malgunbd.ttf" if bold else "malgun.ttf")
+        if path.exists():
+            return str(path)
+
+    # Linux (Streamlit Cloud Ubuntu) — packages.txt로 설치된 폰트
+    suffix_b = "Bold" if bold else ""
+    candidates = [
+        f"/usr/share/fonts/truetype/nanum/NanumGothic{suffix_b}.ttf",
+        f"/usr/share/fonts/truetype/nanum/NanumBarunGothic{suffix_b}.ttf",
+        # 백업: noto-cjk (다른 설치 환경 대비)
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc" if bold
+            else "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        # 최종 백업: DejaVu (한글 미지원, 영문만)
+        f"/usr/share/fonts/truetype/dejavu/DejaVuSans{'-Bold' if bold else ''}.ttf",
+    ]
+    for p in candidates:
+        if Path(p).exists():
+            return p
+    return ""
+
+
+FONT_REGULAR = _find_korean_font(bold=False)
+FONT_BOLD = _find_korean_font(bold=True) or FONT_REGULAR
 
 # ===========================================================
 # 개인 트랙 — 한국 국내 시장, 김진호 1인칭 화자
