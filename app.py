@@ -955,13 +955,22 @@ with tab_h:
                         with st.expander("참고 본문 (검수용)"):
                             st.text(composed["reference"])
                 with hc2:
-                    img_path = OUT_DIR / data.get("image_file", "")
-                    if img_path.exists():
-                        st.image(str(img_path))
-                        st.download_button(
-                            "PNG 다시 받기",
-                            data=img_path.read_bytes(),
-                            file_name=img_path.name,
-                            mime="image/png",
-                            key=f"hist_dl_{ts}",
-                        )
+                    # refine JSON은 new_image_file 키 사용 — 둘 다 폴백
+                    img_file = (
+                        (data.get("image_file") or "").strip()
+                        or (data.get("new_image_file") or "").strip()
+                    )
+                    if img_file:
+                        img_path = OUT_DIR / img_file
+                        # is_file()로 디렉토리 케이스 차단 (IsADirectoryError 방지)
+                        if img_path.is_file():
+                            st.image(str(img_path))
+                            st.download_button(
+                                "PNG 다시 받기",
+                                data=img_path.read_bytes(),
+                                file_name=img_path.name,
+                                mime="image/png",
+                                key=f"hist_dl_{ts}",
+                            )
+                        else:
+                            st.caption("⚠️ 이미지 파일 없음 (클라우드 재배포로 휘발)")
